@@ -91,13 +91,13 @@ class Centerline(MultiLineString):
                     ridges_within_geometry.append(ridge)
         if len(ridges_within_geometry) < 2:
             raise exceptions.TooFewRidgesError
-        road_list = Roadlist(ridges_within_geometry)
+        road_list = Roadlist(ridges_within_geometry, vertices)
         for road in road_list.complete_roads:
             road_points = [self._create_point_with_restored_coordinates(*vertices[idx]) for idx in road]
             linestring = LineString(road_points)
-            if linestring.length < 10:
+            #if linestring.length < 10:
                 # We don't need short roads, this constant is arbitrary
-                continue
+            #    continue
             linestrings.append(LineString(road_points))
         return linestrings
 
