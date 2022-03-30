@@ -7,6 +7,8 @@ from scipy.spatial import Voronoi
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.ops import unary_union
 
+from .roadlist import Roadlist
+
 from . import exceptions
 
 
@@ -72,7 +74,9 @@ class Centerline(MultiLineString):
 
     def _construct_centerline(self):
         vertices, ridges = self._get_voronoi_vertices_and_ridges()
+        ridges_within_geometry = []
         linestrings = []
+        # First determine which ridges are within our geometry
         for ridge in ridges:
             if self._ridge_is_finite(ridge):
                 starting_point = self._create_point_with_restored_coordinates(
@@ -84,12 +88,18 @@ class Centerline(MultiLineString):
                 linestring = LineString((starting_point, ending_point))
 
                 if self._linestring_is_within_input_geometry(linestring):
-                    linestrings.append(linestring)
-
-        if len(linestrings) < 2:
+                    ridges_within_geometry.append(ridge)
+        if len(ridges_within_geometry) < 2:
             raise exceptions.TooFewRidgesError
-
-        return unary_union(linestrings)
+        road_list = Roadlist(ridges_within_geometry)
+        for road in road_list.complete_roads:
+            road_points = [self._create_point_with_restored_coordinates(*vertices[idx]) for idx in road]
+            linestring = LineString(road_points)
+            if linestring.length < 10:
+                # We don't need short roads, this constant is arbitrary
+                continue
+            linestrings.append(LineString(road_points))
+        return linestrings
 
     def _get_voronoi_vertices_and_ridges(self):
         borders = self._get_densified_borders()
