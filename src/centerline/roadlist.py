@@ -22,6 +22,9 @@ class Roadlist:
         self.close_remaining_roads()
         if self.incomplete_roads[1]:
             raise IncompleteRoadError
+        self.filter_dead_ends()
+        self.join_old_intersections()
+        self.intersections = self.get_intersections(self.complete_roads)
 
     def generate_intersection_map(self, endpoints):
         intersection_map = dict()
@@ -66,11 +69,13 @@ class Roadlist:
         return (-1,0,0)
 
     def add_segment_to_road(self, seg):
+        seg = seg.copy()
+        seg_endpoints = endpoints(seg)
         intersection_values = [self.intersection_map[seg[0]],self.intersection_map[seg[-1]]]
         if intersection_values == [2,2]:
             # Both middle segments, try to connect both ends
             road_list, road, position = [],[],[]
-            for vertex in seg:
+            for vertex in seg_endpoints:
                 rl, r, p = self.find_road_by_vertex(vertex)
                 road_list.append(rl)
                 road.append(r)
@@ -84,16 +89,16 @@ class Roadlist:
                 road2 = self.incomplete_roads[road_list[1]].pop(road[1])
                 if position == [0,0]:
                     # Connecting front to front
-                    current_road = road1[::-1] + road2
+                    current_road = road1[::-1] + seg[1:-2] + road2
                 elif position == [-1,-1]:
                     # Connecting back to back
-                    current_road = road1 + road2[::-1]
+                    current_road = road1 + seg[1:-2] + road2[::-1]
                 elif position == [0, -1]:
                     # Connecting front of first to back of second
-                    current_road = road2 + road1
+                    current_road = road2 + seg[-2:0:-1] + road1
                 elif position == [-1,0]:
                     # Connecting back of first to front of second
-                    current_road = road1 + road2
+                    current_road = road1 + seg[1:-2] + road2
                 # Figure out which list this should be added to
                 if road_list == [0,0]:
                     # Both fully open -> combination is fully open
@@ -117,26 +122,25 @@ class Roadlist:
                     return
             elif road_list[0] == -1 and road_list[1] == -1:
                 # Neither point can be added to an existing segment
-                self.incomplete_roads[0].append(seg.copy())
+                self.incomplete_roads[0].append(seg)
                 return
             elif road_list[0] == -1:
                 # Second point can be connected
                 if position[1] == 0:
-                    self.incomplete_roads[road_list[1]][road[1]].insert(0,seg[0])
+                    self.incomplete_roads[road_list[1]][road[1]] = seg[:-1] + self.incomplete_roads[road_list[1]][road[1]]
                     return
                 else:
-                    self.incomplete_roads[road_list[1]][road[1]].append(seg[0])
+                    self.incomplete_roads[road_list[1]][road[1]].extend(seg[-2::-1])
                     return
             elif road_list[1] == -1:
                 if position[0] == 0:
-                    self.incomplete_roads[road_list[0]][road[0]].insert(0,seg[1])
+                    self.incomplete_roads[road_list[0]][road[0]] = seg[-1:0:-1] + self.incomplete_roads[road_list[0]][road[0]]
                     return
                 else:
-                    self.incomplete_roads[road_list[0]][road[0]].append(seg[1])
+                    self.incomplete_roads[road_list[0]][road[0]].extend(seg[1:])
                     return
 
         elif 2 in intersection_values:
-            seg = seg.copy()
             if intersection_values[1] == 2:
                 seg = seg[::-1]
             # 0 can be connected, 1 is an end
@@ -149,10 +153,10 @@ class Roadlist:
                 current_road = self.incomplete_roads[road_list].pop(road)
                 
                 if position == 0:
-                    current_road.insert(0, seg[1])
+                    current_road = seg[-1:0:-1] + current_road
                     current_road = current_road[::-1] #Shift end to back of list
                 else:
-                    current_road.append(seg[1])
+                    current_road.extend(seg[1:])
                 if road_list == 0:
                     self.incomplete_roads[1].append(current_road)
                     return
@@ -166,20 +170,9 @@ class Roadlist:
         elif 3 in intersection_values:
             # Short segment that connects two intersections
             # TODO: collapse the two intersection this segment joins into one point
-            self.complete_roads.append(seg.copy())
+            self.complete_roads.append(seg)
         else:
             print("Logic Error")
-
-    def filter_dead_ends(self):
-        road_endpoints = endpoints(self.complete_roads)
-        intersection_map = self.generate_intersection_map(road_endpoints)
-        for road in self.complete_roads:
-            if intersection_map[road[0]] == 1 or intersection_map[road[-1]] == 1:
-                road_points = [self.vertex_positions[v] for v in road]
-                road_geometry = LineString(road_points)
-                if road_geometry.length < 20:
-                    self.complete_roads.remove(road)
-
 
     def close_remaining_roads(self):
         if len(self.incomplete_roads[1])%2 != 0:
@@ -194,11 +187,48 @@ class Roadlist:
                     self.complete_roads.append(current_road)
                     break
 
-def endpoints(roads):
-    endpoints = []
-    for road in roads:
-        endpoints.append([road[0],road[-1]])
-    return endpoints
+    def filter_dead_ends(self):
+        road_endpoints = []
+        for road in self.complete_roads:
+            road_endpoints.append(endpoints(road))
+        intersection_map = self.generate_intersection_map(road_endpoints)
+        roads = self.complete_roads.copy()
+        self.complete_roads.clear()
+        for road in roads:
+            if intersection_map[road[0]] == 1 or intersection_map[road[-1]] == 1:
+                road_points = [self.vertex_positions[v] for v in road]
+                road_geometry = LineString(road_points)
+                if road_geometry.length > 20:
+                    self.complete_roads.append(road)
+            else:
+                self.complete_roads.append(road)
+
+    def join_old_intersections(self):
+        road_endpoints = []
+        for road in self.complete_roads:
+            road_endpoints.append(endpoints(road))
+        self.intersection_map = self.generate_intersection_map(road_endpoints)
+        roads = self.complete_roads.copy()
+        self.complete_roads.clear()
+        for road in roads:
+            self.add_segment_to_road(road)
+        self.close_remaining_roads()
+
+    def get_intersections(self, roads):
+        road_endpoints = []
+        for road in roads:
+            road_endpoints.append(endpoints(road))
+        self.intersection_map = self.generate_intersection_map(road_endpoints)
+        intersections = []
+        for point, intersection_value in self.intersection_map.items():
+            if intersection_value == 1 or intersection_value > 2:
+                intersections.append(point)
+        return intersections
+
+
+
+def endpoints(road):
+    return [road[0],road[-1]]
 
 def explode_ridges(ridges):
     result = []
@@ -214,6 +244,10 @@ def explode_ridges(ridges):
     result = list(set(result)) # Remove duplicates
     result = [list(ridge) for ridge in result] #Cast back to list of lists
     return result
+
+
+    
+
 
 class IncompleteRoadError(Exception):
     """Error raised when a road cannot be completed

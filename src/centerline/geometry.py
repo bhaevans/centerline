@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 
 from numpy import array
 from scipy.spatial import Voronoi
-from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon, Point
 from shapely.ops import unary_union
 
 from .roadlist import Roadlist
@@ -76,6 +76,7 @@ class Centerline(MultiLineString):
         vertices, ridges = self._get_voronoi_vertices_and_ridges()
         ridges_within_geometry = []
         linestrings = []
+        self.points = []
         # First determine which ridges are within our geometry
         for ridge in ridges:
             if self._ridge_is_finite(ridge):
@@ -95,10 +96,9 @@ class Centerline(MultiLineString):
         for road in road_list.complete_roads:
             road_points = [self._create_point_with_restored_coordinates(*vertices[idx]) for idx in road]
             linestring = LineString(road_points)
-            #if linestring.length < 10:
-                # We don't need short roads, this constant is arbitrary
-            #    continue
             linestrings.append(LineString(road_points))
+        for intersection in road_list.intersections:
+            self.points.append(Point(self._create_point_with_restored_coordinates(*vertices[intersection])))
         return linestrings
 
     def _get_voronoi_vertices_and_ridges(self):
