@@ -225,8 +225,6 @@ class Roadlist:
                 intersections.append(point)
         return intersections
 
-
-
 def endpoints(road):
     return [road[0],road[-1]]
 
@@ -243,11 +241,7 @@ def explode_ridges(ridges):
             result.append(tuple(ridge))
     result = list(set(result)) # Remove duplicates
     result = [list(ridge) for ridge in result] #Cast back to list of lists
-    return result
-
-
-    
-
+    return result   
 
 class IncompleteRoadError(Exception):
     """Error raised when a road cannot be completed
